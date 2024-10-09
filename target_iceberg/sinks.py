@@ -40,8 +40,9 @@ class IcebergSink(BatchSink):
             context: Stream partition or context dictionary.
         """
         # Load the Iceberg catalog
-        region = fs.resolve_s3_region(self.config.get("s3_bucket"))
-        self.logger.info(f"AWS Region: {region}")
+        region = 'eu-west-1'
+        # region = fs.resolve_s3_region(self.config.get("s3_bucket"))
+        # self.logger.info(f"AWS Region: {region}")
 
         catalog_name = self.config.get("iceberg_catalog_name")
         self.logger.info(f"Catalog name: {catalog_name}")
@@ -97,4 +98,4 @@ class IcebergSink(BatchSink):
             self.logger.info(f"Table '{table_id}' created")
 
         # Add data to the table
-        table.append(df)
+        table.overwrite(df)

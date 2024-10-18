@@ -44,8 +44,6 @@ class IcebergSink(BatchSink):
         # region = fs.resolve_s3_region(self.config.get("s3_bucket"))
         # self.logger.info(f"AWS Region: {region}")
 
-        self.logger.info(f"First Batch: {self.is_first_batch}")
-
         catalog_name = self.config.get("iceberg_catalog_name")
         self.logger.info(f"Catalog name: {catalog_name}")
 

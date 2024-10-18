@@ -32,6 +32,7 @@ class IcebergSink(BatchSink):
         )
         self.stream_name = stream_name
         self.schema = schema
+        self.is_first_batch = True 
 
     def process_batch(self, context: dict) -> None:
         """Write out any prepped records and return once fully written.
@@ -43,6 +44,8 @@ class IcebergSink(BatchSink):
         region = 'eu-west-1'
         # region = fs.resolve_s3_region(self.config.get("s3_bucket"))
         # self.logger.info(f"AWS Region: {region}")
+
+        self.logger.info(f"First Batch: {self.is_first_batch}")
 
         catalog_name = self.config.get("iceberg_catalog_name")
         self.logger.info(f"Catalog name: {catalog_name}")
@@ -98,4 +101,9 @@ class IcebergSink(BatchSink):
             self.logger.info(f"Table '{table_id}' created")
 
         # Add data to the table
-        table.overwrite(df)
+        
+        if self.is_first_batch:
+            table.overwrite(df)
+            self.is_first_batch = False
+        else:
+            table.append(df)

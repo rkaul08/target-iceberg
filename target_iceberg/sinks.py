@@ -32,6 +32,7 @@ class IcebergSink(BatchSink):
         )
         self.stream_name = stream_name
         self.schema = schema
+        self.is_first_batch = True
 
     def process_batch(self, context: dict) -> None:
         """Write out any prepped records and return once fully written.
@@ -97,4 +98,8 @@ class IcebergSink(BatchSink):
             self.logger.info(f"Table '{table_id}' created")
 
         # Add data to the table
-        table.append(df)
+        if self.is_first_batch:
+            table.overwrite(df)
+            self.is_first_batch = False
+        else:
+            table.append(df)

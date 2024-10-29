@@ -15,7 +15,11 @@ from .iceberg import singer_to_pyarrow_schema, pyarrow_to_pyiceberg_schema
 class IcebergSink(BatchSink):
     """Iceberg target sink class."""
 
-    max_size = 10000  # Max records to write in one batch
+    @property
+    def max_size(self) -> int:
+        """Return configured batch size or default."""
+        return self.config.get("max_batch_size", 100000)
+
 
     def __init__(
         self,
@@ -40,6 +44,21 @@ class IcebergSink(BatchSink):
         Args:
             context: Stream partition or context dictionary.
         """
+
+        write_properties = {
+            "write.format.default": "iceberg",
+            "write.target-file-size-bytes": "268435456",
+            "write.parquet.row-group-size-bytes": "67108864",
+            "write.parquet.page-size-bytes": "1048576",
+            "write.parquet.compression-codec": "zstd",
+            "write.parquet.compression-level": 1,
+            "write.parquet.bloom-filter-enabled": "true",
+            "write.metadata.metrics.default": "truncate(16)",
+            "write.distribution-mode": "hash"
+            #"write.target-file-size-bytes": "536870912",
+        }
+
+
         # Load the Iceberg catalog
         region = 'eu-west-1'
         # region = fs.resolve_s3_region(self.config.get("s3_bucket"))
@@ -63,6 +82,9 @@ class IcebergSink(BatchSink):
                 "s3.region": region,
                 "s3.access-key-id": self.config.get("aws_access_key_id"),
                 "s3.secret-access-key": self.config.get("aws_secret_access_key"),
+                "s3.upload.thread-pool-size":"4",
+                "s3.multipart.threshold": "104857600", # Only files greater than 100MB will be using multipart upload/parallel writes
+                "s3.multipart.part-size-bytes": "104857600" # files will be divided on 100MB, 500MB file will have 5 parts
             },
         )
 
@@ -97,6 +119,10 @@ class IcebergSink(BatchSink):
             pyiceberg_schema = pyarrow_to_pyiceberg_schema(self, pa_schema)
             table = catalog.create_table(table_id, schema=pyiceberg_schema)
             self.logger.info(f"Table '{table_id}' created")
+
+
+        columns = {col: [record[col] for record in context["records"]] for col in pa_schema.names}
+        df = pa.Table.from_pydict(columns, schema=pa_schema)
 
         # Add data to the table
         

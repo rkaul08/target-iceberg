@@ -21,6 +21,12 @@ class TargetIceberg(Target):
             description="AWS access key id",
         ),
         th.Property( # temporary until pyiceberg fix is released
+            "max_batch_size",
+            th.IntegerType,
+            default=100000,
+            description="Maximum number of records to process in one batch",
+        ),
+        th.Property( # temporary until pyiceberg fix is released
             "aws_secret_access_key",
             th.StringType,
             required=True,

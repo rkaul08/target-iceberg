@@ -105,16 +105,23 @@ class IcebergSink(BatchSink):
 
         # Create pyarrow df
         singer_schema = self.schema
+
+        for record in context["records"]:
+            if "_sdc_batched_at" in record:
+                try:
+                    batched_at = datetime.strptime(record["_sdc_batched_at"].split('.')[0], "%Y-%m-%d %H:%M:%S")
+                    record["partition_date"] = batched_at.strftime("%Y-%m-%d")
+                except (ValueError, AttributeError):
+                    record["partition_date"] = datetime.now().strftime("%Y-%m-%d")
+            else:
+                record["partition_date"] = datetime.now().strftime("%Y-%m-%d")
+        
         singer_schema["properties"]["partition_date"] = {
             "type": ["string", "null"],
             "format": "date"
         }
         pa_schema = singer_to_pyarrow_schema(self, singer_schema)
-        current_date = datetime.now().strftime("%Y-%m-%d")
 
-        for record in context["records"]:
-            print(record)
-            record["partition_date"] = current_date
         df = pa.Table.from_pylist(context["records"], schema=pa_schema)
 
         # Create a table if it doesn't exist

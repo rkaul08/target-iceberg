@@ -108,14 +108,20 @@ class IcebergSink(BatchSink):
 
         for record in context["records"]:
             if "_sdc_batched_at" in record:
-                self.logger.info("The test record is : {record}")
+                record["partition_date"] = datetime.now().strftime("%Y-%m-%d")
+                self.logger.info(f"The test record is : {record}")
                 try:
                     batched_at = datetime.strptime(record["_sdc_batched_at"].split('.')[0], "%Y-%m-%d %H:%M:%S")
                     record["partition_date"] = batched_at.strftime("%Y-%m-%d")
+                    self.logger.info(f"batched_at : {batched_at.strftime("%Y-%m-%d")}")
+                    self.logger.info(f"The test record After addition is : {record}")
                 except (ValueError, AttributeError):
                     record["partition_date"] = datetime.now().strftime("%Y-%m-%d")
+                    self.logger.info(f"Except addition is : {record}")
             else:
+                self.logger.info(f"Else addition is : {record}")
                 record["partition_date"] = datetime.now().strftime("%Y-%m-%d")
+
         
         singer_schema["properties"]["partition_date"] = {
             "type": ["string", "null"],

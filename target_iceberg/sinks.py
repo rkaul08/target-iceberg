@@ -113,6 +113,7 @@ class IcebergSink(BatchSink):
         current_date = datetime.now().strftime("%Y-%m-%d")
 
         for record in context["records"]:
+            print(record)
             record["partition_date"] = current_date
         df = pa.Table.from_pylist(context["records"], schema=pa_schema)
 

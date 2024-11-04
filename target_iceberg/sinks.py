@@ -105,6 +105,9 @@ class IcebergSink(BatchSink):
 
         # Create pyarrow df
         singer_schema = self.schema
+        original_pa_schema = singer_to_pyarrow_schema(self, singer_schema)
+        self.logger.info(f"Original PyArrow Schema: {original_pa_schema}")
+
         partition_date_value = datetime.now().strftime("%Y-%m-%d")
 
         for record in context["records"]:
@@ -115,11 +118,14 @@ class IcebergSink(BatchSink):
             "type": ["string", "null"],
             "format": "date"
         }
-        self.logger.info(f"Singer Schema: {json.dumps(singer_schema, indent=2)}")
+        self.logger.info(f"Modified Singer Schema: {json.dumps(singer_schema, indent=2)}")
 
-        pa_schema = singer_to_pyarrow_schema(self, singer_schema)
+        fields = list(original_pa_schema)
+        fields.append(pa.field("partition_date", pa.string()))
+        pa_schema = pa.schema(fields)
 
         self.logger.info(f"PyArrow Schema: {pa_schema}")
+        self.logger.info(f"Field order in PyArrow schema: {[field.name for field in pa_schema]}")
 
         df = pa.Table.from_pylist(context["records"], schema=pa_schema)
 

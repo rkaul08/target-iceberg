@@ -108,7 +108,7 @@ class IcebergSink(BatchSink):
 
         for record in context["records"]:
             if "_sdc_batched_at" in record:
-                print("The test record is : {record}")
+                self.logger.info("The test record is : {record}")
                 try:
                     batched_at = datetime.strptime(record["_sdc_batched_at"].split('.')[0], "%Y-%m-%d %H:%M:%S")
                     record["partition_date"] = batched_at.strftime("%Y-%m-%d")

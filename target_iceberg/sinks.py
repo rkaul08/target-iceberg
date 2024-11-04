@@ -126,7 +126,8 @@ class IcebergSink(BatchSink):
             fields.append(pa.field(field.name, field.type, metadata={'field_id': str(field_id)}))
             field_id += 1
             
-        fields.append(pa.field("partition_date", pa.string()))
+
+        fields.append(pa.field("partition_date", pa.string(), metadata={'field_id': str(field_id)}))
         pa_schema = pa.schema(fields)
 
         self.logger.info(f"PyArrow Schema: {pa_schema}")

@@ -8,6 +8,9 @@ import pyarrow as pa  # type: ignore
 from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError
 from pyarrow import fs
+from datetime import datetime
+from pyiceberg.partitioning import PartitionSpec, PartitionField
+from pyiceberg.transforms import DayTransform
 
 from .iceberg import singer_to_pyarrow_schema, pyarrow_to_pyiceberg_schema
 
@@ -102,7 +105,15 @@ class IcebergSink(BatchSink):
 
         # Create pyarrow df
         singer_schema = self.schema
+        singer_schema["properties"]["partition_date"] = {
+            "type": ["string", "null"],
+            "format": "date"
+        }
         pa_schema = singer_to_pyarrow_schema(self, singer_schema)
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        for record in context["records"]:
+            record["partition_date"] = current_date
         df = pa.Table.from_pylist(context["records"], schema=pa_schema)
 
         # Create a table if it doesn't exist
@@ -117,7 +128,21 @@ class IcebergSink(BatchSink):
         except NoSuchTableError as e:
             # Table doesn't exist, so create it
             pyiceberg_schema = pyarrow_to_pyiceberg_schema(self, pa_schema)
-            table = catalog.create_table(table_id, schema=pyiceberg_schema)
+
+                # Create partition spec
+            partition_spec = PartitionSpec(
+            PartitionField(
+                source_id=pyiceberg_schema.find_field("partition_date").field_id,
+                transform=DayTransform(),
+                name="partition_date"
+                )
+            )   
+
+            table = catalog.create_table(
+                identifier=table_id,
+                schema=pyiceberg_schema,
+                partition_spec=partition_spec,
+                properties=write_properties)
             self.logger.info(f"Table '{table_id}' created")
 
 

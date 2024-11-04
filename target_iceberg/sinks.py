@@ -11,7 +11,7 @@ from pyarrow import fs
 from datetime import datetime
 from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import DayTransform
-
+import json
 from .iceberg import singer_to_pyarrow_schema, pyarrow_to_pyiceberg_schema
 
 
@@ -108,6 +108,7 @@ class IcebergSink(BatchSink):
 
         for record in context["records"]:
             if "_sdc_batched_at" in record:
+                print("The test record is : {record}")
                 try:
                     batched_at = datetime.strptime(record["_sdc_batched_at"].split('.')[0], "%Y-%m-%d %H:%M:%S")
                     record["partition_date"] = batched_at.strftime("%Y-%m-%d")
@@ -120,7 +121,11 @@ class IcebergSink(BatchSink):
             "type": ["string", "null"],
             "format": "date"
         }
+        self.logger.info(f"Singer Schema: {json.dumps(singer_schema, indent=2)}")
+
         pa_schema = singer_to_pyarrow_schema(self, singer_schema)
+
+        self.logger.info(f"PyArrow Schema: {pa_schema}")
 
         df = pa.Table.from_pylist(context["records"], schema=pa_schema)
 

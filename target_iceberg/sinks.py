@@ -120,7 +120,12 @@ class IcebergSink(BatchSink):
         }
         self.logger.info(f"Modified Singer Schema: {json.dumps(singer_schema, indent=2)}")
 
-        fields = list(original_pa_schema)
+        fields = []
+        field_id = 1  # Start with ID 1
+        for field in original_pa_schema:
+            fields.append(pa.field(field.name, field.type, metadata={'field_id': str(field_id)}))
+            field_id += 1
+            
         fields.append(pa.field("partition_date", pa.string()))
         pa_schema = pa.schema(fields)
 

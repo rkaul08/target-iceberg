@@ -10,7 +10,7 @@ from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceErr
 from pyarrow import fs
 from datetime import datetime
 from pyiceberg.partitioning import PartitionSpec, PartitionField
-from pyiceberg.transforms import DayTransform
+from pyiceberg.transforms import IdentityTransform
 import json
 from .iceberg import singer_to_pyarrow_schema, pyarrow_to_pyiceberg_schema
 
@@ -120,7 +120,7 @@ class IcebergSink(BatchSink):
         
         singer_schema["properties"]["partition_date"] = {
             "type": ["string", "null"],
-            "format": "date"
+            "format": "string"
         }
 
 
@@ -167,7 +167,7 @@ class IcebergSink(BatchSink):
             partition_spec = PartitionSpec(
             PartitionField(
                 source_id=pyiceberg_schema.find_field("partition_date").field_id,
-                transform=DayTransform(),
+                transform=IdentityTransform(),
                 name="partition_date",
                 field_id=1000 
                 )
@@ -190,14 +190,12 @@ class IcebergSink(BatchSink):
             # Use the new overwrite method
             table.overwrite(
                 df,
-                overwrite_filter=f"partition_date = '{partition_date_value}'",
-                snapshot_properties={"operation": "overwrite", "partition": partition_date_value}
+                overwrite_filter=f"partition_date = '{partition_date_value}'"
             )
             self.is_first_batch = False
         else:
             # For subsequent batches, use the same approach
             table.overwrite(
                 df,
-                overwrite_filter=f"partition_date = '{partition_date_value}'",
-                snapshot_properties={"operation": "overwrite", "partition": partition_date_value}
+                overwrite_filter=f"partition_date = '{partition_date_value}'"
             )

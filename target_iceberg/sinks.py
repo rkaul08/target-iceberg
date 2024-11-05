@@ -3,26 +3,51 @@
 from __future__ import annotations
 import os
 from typing import cast, Any
-from singer_sdk.sinks import BatchSink
-import pyarrow as pa  # type: ignore
-from pyiceberg.catalog import load_catalog
-from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError
-from pyarrow import fs
 from datetime import datetime
+import json
+
+import pyarrow as pa  # type: ignore
+from pyarrow import fs
+from singer_sdk.sinks import BatchSink
+from pyiceberg.catalog import load_catalog
+from pyiceberg.exceptions import (
+    NamespaceAlreadyExistsError,
+    NoSuchNamespaceError,
+    NoSuchTableError
+)
 from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import DayTransform
-import json
+
 from .iceberg import singer_to_pyarrow_schema, pyarrow_to_pyiceberg_schema
 
 
 class IcebergSink(BatchSink):
-    """Iceberg target sink class."""
+    """Iceberg target sink class for writing data streams to Apache Iceberg tables."""
+
+    # Default Iceberg write properties
+    WRITE_PROPERTIES = {
+        "write.format.default": "iceberg",
+        "write.target-file-size-bytes": "268435456",  # 256MB
+        "write.parquet.compression-codec": "zstd",
+        "write.parquet.compression-level": "1",
+        "write.parquet.bloom-filter-enabled": "true",
+        "write.metadata.metrics.default": "truncate(16)",
+        "write.distribution-mode": "hash",
+        "schema.name-mapping.default": "true",
+        "format-version": "2"
+    }
+
+    # S3 configuration
+    S3_CONFIG = {
+        "s3.upload.thread-pool-size": "4",
+        "s3.multipart.threshold": "104857600",  # 100MB threshold for multipart upload
+        "s3.multipart.part-size-bytes": "104857600"  # 100MB part size
+    }
 
     @property
     def max_size(self) -> int:
         """Return configured batch size or default."""
         return self.config.get("max_batch_size", 100000)
-
 
     def __init__(
         self,
@@ -31,6 +56,14 @@ class IcebergSink(BatchSink):
         schema: dict,
         key_properties: list[str] | None,
     ) -> None:
+        """Initialize the Iceberg sink.
+
+        Args:
+            target: The target object.
+            stream_name: Name of the stream.
+            schema: Schema of the stream.
+            key_properties: Key properties for the stream.
+        """
         super().__init__(
             target=target,
             schema=schema,
@@ -41,156 +74,124 @@ class IcebergSink(BatchSink):
         self.schema = schema
         self.is_first_batch = True
 
-    def process_batch(self, context: dict) -> None:
-        """Write out any prepped records and return once fully written.
-
-        Args:
-            context: Stream partition or context dictionary.
-        """
-
-        write_properties = {
-            "write.format.default": "iceberg",
-            "write.target-file-size-bytes": "268435456",
-            "write.parquet.compression-codec": "zstd",
-            "write.parquet.compression-level": "1",
-            "write.parquet.bloom-filter-enabled": "true",
-            "write.metadata.metrics.default": "truncate(16)",
-            "write.distribution-mode": "hash",
-            "schema.name-mapping.default": "true",
-            "format-version": "2" 
-        }
-
-
-        # Load the Iceberg catalog
+    def _get_catalog(self) -> Any:
+        """Initialize and return the Iceberg catalog."""
         region = 'eu-west-1'
-        # region = fs.resolve_s3_region(self.config.get("s3_bucket"))
-        # self.logger.info(f"AWS Region: {region}")
-
         catalog_name = self.config.get("iceberg_catalog_name")
-        self.logger.info(f"Catalog name: {catalog_name}")
-
         s3_endpoint = self.config.get("s3_endpoint")
-        self.logger.info(f"S3 endpoint: {s3_endpoint}")
-
         iceberg_rest_uri = self.config.get("iceberg_rest_uri")
+
+        self.logger.info(f"Catalog name: {catalog_name}")
+        self.logger.info(f"S3 endpoint: {s3_endpoint}")
         self.logger.info(f"Iceberg REST URI: {iceberg_rest_uri}")
 
-        catalog = load_catalog(
-            catalog_name,
-            **{
-                "uri": iceberg_rest_uri,
-                "s3.endpoint": s3_endpoint,
-                "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
-                "s3.region": region,
-                "s3.access-key-id": self.config.get("aws_access_key_id"),
-                "s3.secret-access-key": self.config.get("aws_secret_access_key"),
-                "s3.upload.thread-pool-size":"4",
-                "s3.multipart.threshold": "104857600", # Only files greater than 100MB will be using multipart upload/parallel writes
-                "s3.multipart.part-size-bytes": "104857600" # files will be divided on 100MB, 500MB file will have 5 parts
-            },
-        )
+        catalog_config = {
+            "uri": iceberg_rest_uri,
+            "s3.endpoint": s3_endpoint,
+            "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
+            "s3.region": region,
+            "s3.access-key-id": self.config.get("aws_access_key_id"),
+            "s3.secret-access-key": self.config.get("aws_secret_access_key"),
+            **self.S3_CONFIG
+        }
 
-        nss = catalog.list_namespaces()
-        self.logger.info(f"Namespaces: {nss}")
+        return load_catalog(catalog_name, **catalog_config)
 
-        # Create a namespace if it doesn't exist
-        ns_name: str = cast(str, self.config.get("iceberg_catalog_namespace_name"))
-        try:
-            catalog.create_namespace(ns_name)
-            self.logger.info(f"Namespace '{ns_name}' created")
-        except (NamespaceAlreadyExistsError, NoSuchNamespaceError):
-            # NoSuchNamespaceError is also raised for some reason (probably a bug - but needs to be handled anyway)
-            self.logger.info(f"Namespace '{ns_name}' already exists")
-
-        # Create pyarrow df
-        singer_schema = self.schema
-        original_pa_schema = singer_to_pyarrow_schema(self, singer_schema)
-
-        self.logger.info(f"Original PyArrow Schema: {original_pa_schema}")
-
-        partition_date_value = datetime.now().date()
-
-        for record in context["records"]:
-            record["partition_date"] = partition_date_value
-
+    def _prepare_schema(self) -> tuple[pa.Schema, datetime]:
+        """Prepare the PyArrow schema with partition date field.
         
+        Returns:
+            Tuple of (PyArrow schema, partition date value)
+        """
+        # Add partition_date to schema
+        singer_schema = self.schema.copy()
         singer_schema["properties"]["partition_date"] = {
             "type": ["string", "null"],
             "format": "date"
         }
-
-
-        self.logger.info(f"Modified Singer Schema: {json.dumps(singer_schema, indent=2)}")
-
+        
+        # Convert to PyArrow schema
+        original_pa_schema = singer_to_pyarrow_schema(self, singer_schema)
+        self.logger.info(f"Original PyArrow Schema: {original_pa_schema}")
+        
+        # Process fields and ensure proper types and metadata
         fields = []
         field_id = 1
         for field in original_pa_schema:
+            field_type = field.type
+            if pa.types.is_date64(field_type):
+                field_type = pa.date32()
+
             metadata = {
                 b'PARQUET:field_id': str(field_id).encode(),
                 b'field_id': str(field_id).encode()
             }
-            fields.append(pa.field(field.name, field.type, metadata=metadata))
+            fields.append(pa.field(field.name, field_type, metadata=metadata))
             field_id += 1
 
-        # Add partition_date field with proper metadata
-        metadata = {
-            b'PARQUET:field_id': str(field_id).encode(),
-            b'field_id': str(field_id).encode()
-        }
-        fields.append(pa.field("partition_date", pa.date32(), metadata=metadata))
-        pa_schema = pa.schema(fields)
+        return pa.schema(fields), datetime.now().date()
 
-        self.logger.info(f"Final PyArrow Schema with field IDs: {pa_schema}")
-        self.logger.info(f"Final PyArrow Schema with field IDs: {pa_schema}")
+    def process_batch(self, context: dict) -> None:
+        """Process a batch of records.
 
+        Args:
+            context: Stream partition or context dictionary.
+        """
+        # Initialize catalog and create namespace
+        catalog = self._get_catalog()
+        ns_name: str = cast(str, self.config.get("iceberg_catalog_namespace_name"))
+        
+        try:
+            catalog.create_namespace(ns_name)
+            self.logger.info(f"Namespace '{ns_name}' created")
+        except (NamespaceAlreadyExistsError, NoSuchNamespaceError):
+            self.logger.info(f"Namespace '{ns_name}' already exists")
 
+        # Prepare schema and data
+        pa_schema, partition_date_value = self._prepare_schema()
+        
+        # Add partition_date to records
+        for record in context["records"]:
+            record["partition_date"] = partition_date_value
+
+        # Create DataFrame
         df = pa.Table.from_pylist(context["records"], schema=pa_schema)
-
-        # Create a table if it doesn't exist
+        
+        # Handle table creation or loading
         table_name = self.stream_name
         table_id = f"{ns_name}.{table_name}"
 
         try:
             table = catalog.load_table(table_id)
             self.logger.info(f"Table '{table_id}' loaded")
-
-            # TODO: Handle schema evolution - compare existing table schema with singer schema (converted to pyiceberg schema)
-        except NoSuchTableError as e:
-            # Table doesn't exist, so create it
+        except NoSuchTableError:
+            # Create new table with partition spec
             pyiceberg_schema = pyarrow_to_pyiceberg_schema(self, pa_schema)
-
-                # Create partition spec
             partition_spec = PartitionSpec(
-            PartitionField(
-                source_id=pyiceberg_schema.find_field("partition_date").field_id,
-                transform=DayTransform(),
-                name="partition_date",
-                field_id=1000 
+                PartitionField(
+                    source_id=pyiceberg_schema.find_field("partition_date").field_id,
+                    transform=DayTransform(),
+                    name="partition_date",
+                    field_id=1000
                 )
-            )   
+            )
 
             table = catalog.create_table(
                 identifier=table_id,
                 schema=pyiceberg_schema,
                 partition_spec=partition_spec,
-                properties=write_properties)
+                properties=self.WRITE_PROPERTIES
+            )
             self.logger.info(f"Table '{table_id}' created")
 
-
-        # columns = {col: [record[col] for record in context["records"]] for col in pa_schema.names}
-        # df = pa.Table.from_pydict(columns, schema=pa_schema)
-
-        # Add data to the table
-        
+        # Write data
         if self.is_first_batch:
-            # Use the new overwrite method
             table.overwrite(
                 df,
                 overwrite_filter=f"partition_date = '{partition_date_value}'"
             )
             self.is_first_batch = False
         else:
-            # For subsequent batches, use the same approach
             table.overwrite(
                 df,
                 overwrite_filter=f"partition_date = '{partition_date_value}'"

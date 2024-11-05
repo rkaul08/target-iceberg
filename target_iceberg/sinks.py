@@ -10,7 +10,7 @@ from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceErr
 from pyarrow import fs
 from datetime import datetime
 from pyiceberg.partitioning import PartitionSpec, PartitionField
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import DayTransform
 import json
 from .iceberg import singer_to_pyarrow_schema, pyarrow_to_pyiceberg_schema
 
@@ -51,16 +51,12 @@ class IcebergSink(BatchSink):
         write_properties = {
             "write.format.default": "iceberg",
             "write.target-file-size-bytes": "268435456",
-            "write.parquet.row-group-size-bytes": "67108864",
-            "write.parquet.page-size-bytes": "1048576",
             "write.parquet.compression-codec": "zstd",
             "write.parquet.compression-level": "1",
             "write.parquet.bloom-filter-enabled": "true",
             "write.metadata.metrics.default": "truncate(16)",
             "write.distribution-mode": "hash",
-            #"write.target-file-size-bytes": "536870912",
             "schema.name-mapping.default": "true",
-            # "write.metadata.metrics.column.default": "full",
             "format-version": "2" 
         }
 
@@ -112,7 +108,7 @@ class IcebergSink(BatchSink):
 
         self.logger.info(f"Original PyArrow Schema: {original_pa_schema}")
 
-        partition_date_value = datetime.now().strftime("%Y-%m-%d")
+        partition_date_value = datetime.now().date()
 
         for record in context["records"]:
             record["partition_date"] = partition_date_value
@@ -120,7 +116,7 @@ class IcebergSink(BatchSink):
         
         singer_schema["properties"]["partition_date"] = {
             "type": ["string", "null"],
-            "format": "string"
+            "format": "date"
         }
 
 
@@ -141,7 +137,7 @@ class IcebergSink(BatchSink):
             b'PARQUET:field_id': str(field_id).encode(),
             b'field_id': str(field_id).encode()
         }
-        fields.append(pa.field("partition_date", pa.string(), metadata=metadata))
+        fields.append(pa.field("partition_date", pa.date32(), metadata=metadata))
         pa_schema = pa.schema(fields)
 
         self.logger.info(f"Final PyArrow Schema with field IDs: {pa_schema}")
@@ -167,7 +163,7 @@ class IcebergSink(BatchSink):
             partition_spec = PartitionSpec(
             PartitionField(
                 source_id=pyiceberg_schema.find_field("partition_date").field_id,
-                transform=IdentityTransform(),
+                transform=DayTransform(),
                 name="partition_date",
                 field_id=1000 
                 )

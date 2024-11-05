@@ -35,12 +35,15 @@ def singer_to_pyarrow_schema_without_field_ids(self, singer_schema: dict) -> Pya
     def get_pyarrow_schema_from_array(items: dict, level: int = 0):
         type = cast(list[Any], items.get("type"))
         any_of_types = items.get("anyOf")
+        format_type = items.get("format")
 
         if any_of_types:
             self.logger.info("array with anyof type schema detected.")
             type, _ = process_anyof_schema(anyOf=any_of_types)
 
         if "string" in type:
+            if format_type == "date":
+                return pa.date32()
             return pa.string()
         elif "integer" in type:
             return pa.int64()
@@ -162,5 +165,31 @@ def singer_to_pyarrow_schema(self, singer_schema: dict) -> PyarrowSchema:
 
 def pyarrow_to_pyiceberg_schema(self, pa_schema: PyarrowSchema) -> PyicebergSchema:
     """Convert pyarrow schema to pyiceberg schema."""
-    pyiceberg_schema = pyarrow_to_schema(pa_schema)
+    # Ensure all fields have proper metadata before conversion
+    fields = []
+    for field in pa_schema:
+        field_id = field.metadata.get(b'field_id')
+        if field_id is None:
+            # If no field_id in metadata, create one
+            field_id = str(1000).encode()  # default field ID
+        
+        # Create new metadata with PARQUET:field_id
+        new_metadata = {
+            b'PARQUET:field_id': field_id,
+            b'field_id': field_id
+        }
+
+        field_type = field.type
+        if pa.types.is_date64(field_type):
+            field_type = pa.date32()
+
+        field = pa.field(field.name, field_type, field.nullable, new_metadata)
+        fields.append(field)
+
+    
+    # Create new schema with updated fields
+    updated_schema = pa.schema(fields)
+    
+    # Convert to pyiceberg schema
+    pyiceberg_schema = pyarrow_to_schema(updated_schema)
     return pyiceberg_schema

@@ -112,7 +112,6 @@ class IcebergSink(BatchSink):
         
         # Convert to PyArrow schema
         original_pa_schema = singer_to_pyarrow_schema(self, singer_schema)
-        self.logger.info(f"Original PyArrow Schema: {original_pa_schema}")
         
         # Process fields and ensure proper types and metadata
         fields = []
@@ -192,7 +191,4 @@ class IcebergSink(BatchSink):
             )
             self.is_first_batch = False
         else:
-            table.overwrite(
-                df,
-                overwrite_filter=f"partition_date = '{partition_date_value}'"
-            )
+            table.append(df)

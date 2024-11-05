@@ -54,12 +54,14 @@ class IcebergSink(BatchSink):
             "write.parquet.row-group-size-bytes": "67108864",
             "write.parquet.page-size-bytes": "1048576",
             "write.parquet.compression-codec": "zstd",
-            "write.parquet.compression-level": 1,
+            "write.parquet.compression-level": "1",
             "write.parquet.bloom-filter-enabled": "true",
             "write.metadata.metrics.default": "truncate(16)",
-            "write.distribution-mode": "hash"
+            "write.distribution-mode": "hash",
             #"write.target-file-size-bytes": "536870912",
-            "schema.name-mapping.default": "true" 
+            "schema.name-mapping.default": "true",
+            # "write.metadata.metrics.column.default": "full",
+            "format-version": "2" 
         }
 
 
@@ -88,8 +90,7 @@ class IcebergSink(BatchSink):
                 "s3.secret-access-key": self.config.get("aws_secret_access_key"),
                 "s3.upload.thread-pool-size":"4",
                 "s3.multipart.threshold": "104857600", # Only files greater than 100MB will be using multipart upload/parallel writes
-                "s3.multipart.part-size-bytes": "104857600" ,# files will be divided on 100MB, 500MB file will have 5 parts
-                "schema.name-mapping.default": "true"
+                "s3.multipart.part-size-bytes": "104857600" # files will be divided on 100MB, 500MB file will have 5 parts
             },
         )
 
@@ -126,17 +127,26 @@ class IcebergSink(BatchSink):
         self.logger.info(f"Modified Singer Schema: {json.dumps(singer_schema, indent=2)}")
 
         fields = []
-        field_id = 1  # Start with ID 1
+        field_id = 1
         for field in original_pa_schema:
-            fields.append(pa.field(field.name, field.type, metadata={'field_id': str(field_id)}))
+            metadata = {
+                b'PARQUET:field_id': str(field_id).encode(),
+                b'field_id': str(field_id).encode()
+            }
+            fields.append(pa.field(field.name, field.type, metadata=metadata))
             field_id += 1
-            
 
-        fields.append(pa.field("partition_date", pa.string(), metadata={'field_id': str(field_id)}))
+        # Add partition_date field with proper metadata
+        metadata = {
+            b'PARQUET:field_id': str(field_id).encode(),
+            b'field_id': str(field_id).encode()
+        }
+        fields.append(pa.field("partition_date", pa.string(), metadata=metadata))
         pa_schema = pa.schema(fields)
 
-        self.logger.info(f"PyArrow Schema: {pa_schema}")
-        self.logger.info(f"Field order in PyArrow schema: {[field.name for field in pa_schema]}")
+        self.logger.info(f"Final PyArrow Schema with field IDs: {pa_schema}")
+        self.logger.info(f"Final PyArrow Schema with field IDs: {pa_schema}")
+
 
         df = pa.Table.from_pylist(context["records"], schema=pa_schema)
 
@@ -158,7 +168,8 @@ class IcebergSink(BatchSink):
             PartitionField(
                 source_id=pyiceberg_schema.find_field("partition_date").field_id,
                 transform=DayTransform(),
-                name="partition_date"
+                name="partition_date",
+                field_id=1000 
                 )
             )   
 
@@ -170,13 +181,23 @@ class IcebergSink(BatchSink):
             self.logger.info(f"Table '{table_id}' created")
 
 
-        columns = {col: [record[col] for record in context["records"]] for col in pa_schema.names}
-        df = pa.Table.from_pydict(columns, schema=pa_schema)
+        # columns = {col: [record[col] for record in context["records"]] for col in pa_schema.names}
+        # df = pa.Table.from_pydict(columns, schema=pa_schema)
 
         # Add data to the table
         
         if self.is_first_batch:
-            table.overwrite(df)
+            # Use the new overwrite method
+            table.overwrite(
+                df,
+                overwrite_filter=f"partition_date = '{partition_date_value}'",
+                snapshot_properties={"operation": "overwrite", "partition": partition_date_value}
+            )
             self.is_first_batch = False
         else:
-            table.append(df)
+            # For subsequent batches, use the same approach
+            table.overwrite(
+                df,
+                overwrite_filter=f"partition_date = '{partition_date_value}'",
+                snapshot_properties={"operation": "overwrite", "partition": partition_date_value}
+            )

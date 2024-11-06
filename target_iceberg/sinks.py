@@ -33,7 +33,6 @@ class IcebergSink(BatchSink):
         "write.parquet.bloom-filter-enabled": "true",
         "write.metadata.metrics.default": "truncate(16)",
         "write.distribution-mode": "hash",
-        "schema.name-mapping.default": "true",
         "format-version": "2"
     }
 

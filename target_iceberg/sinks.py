@@ -184,6 +184,15 @@ class IcebergSink(BatchSink):
 
         # Write data
         if self.is_first_batch:
+            partition_filter = f"partition_date = '{partition_date_value}'"
+            existing_files = table.scan(row_filter=partition_filter).plan_files()
+
+            if existing_files:
+                # Drop the specific partition if it exists
+                self.logger.info(f"Dropping existing partition for date {partition_date_value}")
+                table.delete(partition_filter)
+
+            self.logger.info(f"Overwriting partition for date {partition_date_value}")
             table.overwrite(
                 df,
                 overwrite_filter=f"partition_date = '{partition_date_value}'"

@@ -26,7 +26,7 @@ class IcebergSink(BatchSink):
 
     # Default Iceberg write properties
     WRITE_PROPERTIES = {
-        "write.format.default": "iceberg",
+        "write.format.default": "parquet",
         "write.target-file-size-bytes": "268435456",  # 256MB
         "write.parquet.compression-codec": "zstd",
         "write.parquet.compression-level": "1",

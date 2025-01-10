@@ -111,23 +111,8 @@ class IcebergSink(BatchSink):
         
         # Convert to PyArrow schema
         original_pa_schema = singer_to_pyarrow_schema(self, singer_schema)
-        
-        # Process fields and ensure proper types and metadata
-        fields = []
-        field_id = 1
-        for field in original_pa_schema:
-            field_type = field.type
-            if pa.types.is_date64(field_type):
-                field_type = pa.date32()
 
-            metadata = {
-                b'PARQUET:field_id': str(field_id).encode(),
-                b'field_id': str(field_id).encode()
-            }
-            fields.append(pa.field(field.name, field_type, metadata=metadata))
-            field_id += 1
-
-        return pa.schema(fields), datetime.now().date()
+        return original_pa_schema, datetime.now().date()
 
     def process_batch(self, context: dict) -> None:
         """Process a batch of records.

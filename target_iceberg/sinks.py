@@ -133,13 +133,6 @@ class IcebergSink(BatchSink):
         # Prepare schema and data
         pa_schema, partition_date_value = self._prepare_schema()
         
-        # Add partition_date to records
-        for record in context["records"]:
-            record["partition_date"] = partition_date_value
-
-        # Create DataFrame
-        df = pa.Table.from_pylist(context["records"], schema=pa_schema)
-        
         # Handle table creation or loading
         table_name = self.stream_name
         table_id = f"{ns_name}.{table_name}"
@@ -147,6 +140,21 @@ class IcebergSink(BatchSink):
         try:
             table = catalog.load_table(table_id)
             self.logger.info(f"Table '{table_id}' loaded")
+
+            table_schema = table.schema()
+            table_field_ids = {field.name: field.field_id for field in table_schema.fields}
+
+            new_fields = []
+            for field in pa_schema:
+                if field.name in table_field_ids:
+                    # Use existing field ID from table
+                    field_with_metadata = field.with_metadata({"PARQUET:field_id": f"{table_field_ids[field.name]}"})
+                else:
+                    # Keep original metadata for new fields
+                    field_with_metadata = field
+                new_fields.append(field_with_metadata)
+
+            pa_schema = pa.schema(new_fields)
         except NoSuchTableError:
             # Create new table with partition spec
             pyiceberg_schema = pyarrow_to_pyiceberg_schema(self, pa_schema)
@@ -166,6 +174,13 @@ class IcebergSink(BatchSink):
                 properties=self.WRITE_PROPERTIES
             )
             self.logger.info(f"Table '{table_id}' created")
+
+        # Add partition_date to records
+        for record in context["records"]:
+            record["partition_date"] = partition_date_value
+
+        # Create DataFrame
+        df = pa.Table.from_pylist(context["records"], schema=pa_schema)
 
         # Write data
         if self.is_first_batch:

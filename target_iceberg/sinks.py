@@ -155,7 +155,7 @@ class IcebergSink(BatchSink):
                      additional_fields.append(field.name)
 
             if additional_fields:
-        		raise ValueError(f"New fields found in DataFrame that don't exist in table: {', '.join(additional_fields)}. Add them in the table.")
+        	    raise ValueError(f"New fields found in DataFrame that don't exist in table: {', '.join(additional_fields)}. Add them in the table.")
                 
             pa_schema = pa.schema(new_fields)
         except NoSuchTableError:

@@ -145,15 +145,18 @@ class IcebergSink(BatchSink):
             table_field_ids = {field.name: field.field_id for field in table_schema.fields}
 
             new_fields = []
+            additional_fields = []
             for field in pa_schema:
                 if field.name in table_field_ids:
                     # Use existing field ID from table
                     field_with_metadata = field.with_metadata({"PARQUET:field_id": f"{table_field_ids[field.name]}"})
+                    new_fields.append(field_with_metadata)
                 else:
-                    # Keep original metadata for new fields
-                    field_with_metadata = field
-                new_fields.append(field_with_metadata)
+                     additional_fields.append(field.name)
 
+            if additional_fields:
+        		raise ValueError(f"New fields found in DataFrame that don't exist in table: {', '.join(additional_fields)}. Add them in the table.")
+                
             pa_schema = pa.schema(new_fields)
         except NoSuchTableError:
             # Create new table with partition spec

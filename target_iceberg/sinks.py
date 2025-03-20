@@ -72,6 +72,7 @@ class IcebergSink(BatchSink):
         self.stream_name = stream_name
         self.schema = schema
         self.is_first_batch = True
+        self.schema_evolution_flag = self.config.get("schema_evolution_flag", False)
 
     def _get_catalog(self) -> Any:
         """Initialize and return the Iceberg catalog."""
@@ -152,10 +153,41 @@ class IcebergSink(BatchSink):
                     field_with_metadata = field.with_metadata({"PARQUET:field_id": f"{table_field_ids[field.name]}"})
                     new_fields.append(field_with_metadata)
                 else:
-                     additional_fields.append(field.name)
+                     additional_fields.append(field)
 
             if additional_fields:
-        	    raise ValueError(f"New fields found in DataFrame that don't exist in table: {', '.join(additional_fields)}. Add them in the table.")
+                if not self.schema_evolution_flag:
+                    # If schema evolution is disabled and we found new fields, raise error
+                    field_names = [field.name for field in additional_fields]
+                    raise ValueError(f"New fields found in DataFrame that don't exist in table: {', '.join(field_names)}. Add them in the table Manually or Add < schema_evolution_flag = True > to meltano target")
+                
+                # Schema evolution is enabled, add new fields
+                self.logger.info(f"Adding new fields: {[field.name for field in additional_fields]}")
+                
+                try:
+                    with table.update_schema() as update:
+                        for field in additional_fields:
+                            # Convert PyArrow type to Iceberg type
+                            iceberg_schema = pyarrow_to_pyiceberg_schema(self, pa.schema([field]))
+                            iceberg_field = iceberg_schema.fields[0]
+                            
+                            # Add the new column
+                            update.add_column(field.name, iceberg_field.field_type)
+                    
+                    # After schema update, get new field IDs and update PyArrow schema
+                    updated_schema = table.schema()
+                    for field in additional_fields:
+                        field_id = updated_schema.find_field(field.name).field_id
+                        field_with_metadata = field.with_metadata({"PARQUET:field_id": f"{field_id}"})
+                        new_fields.append(field_with_metadata)
+                        
+                    self.logger.info("Schema updated successfully")
+                    
+                except Exception as e:
+                    self.logger.error(f"Schema evolution failed: {str(e)}")
+                    raise
+
+
                 
             pa_schema = pa.schema(new_fields)
         except NoSuchTableError:

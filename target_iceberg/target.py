@@ -61,12 +61,6 @@ class TargetIceberg(Target):
             th.StringType,
             required=True,
             description="Name of the Iceberg catalog namespace",
-        ),
-        th.Property(
-            "schema_evolution_flag",
-            th.BooleanType,
-            default=False,
-            description="Add new fields in existing table automatically",
         )
     ).to_dict()
 

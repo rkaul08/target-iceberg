@@ -134,7 +134,11 @@ class IcebergSink(BatchSink):
         pa_schema, partition_date_value = self._prepare_schema()
         
         # Handle table creation or loading
-        table_name = self.stream_name
+        if self.config.get("table_name") is not None:
+            table_name = self.config.get("table_name")
+        else:
+            table_name = self.stream_name
+
         table_id = f"{ns_name}.{table_name}"
 
         try:

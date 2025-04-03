@@ -61,6 +61,12 @@ class TargetIceberg(Target):
             th.StringType,
             required=True,
             description="Name of the Iceberg catalog namespace",
+        ),
+        th.Property(
+            "table_name",
+            th.StringType,
+            default=None,
+            description="Name of the Iceberg Table",
         )
     ).to_dict()
 

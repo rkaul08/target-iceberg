@@ -67,7 +67,13 @@ class TargetIceberg(Target):
             th.StringType,
             default=None,
             description="Name of the Iceberg Table",
-        )
+        ),
+        th.Property(
+             "schema_evolution_flag",
+             th.BooleanType,
+             default=False,
+             description="Add new fields in existing table automatically",
+         )
     ).to_dict()
 
     default_sink_class = IcebergSink

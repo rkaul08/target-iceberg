@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from typing import cast, Any
 from datetime import datetime
+import pytz
 import json
 
 import pyarrow as pa  # type: ignore
@@ -113,7 +114,10 @@ class IcebergSink(BatchSink):
         # Convert to PyArrow schema
         original_pa_schema = singer_to_pyarrow_schema(self, singer_schema)
 
-        return original_pa_schema, datetime.now().date()
+        berlin_tz = pytz.timezone('Europe/Berlin')
+        partition_date_val = datetime.now(berlin_tz).date()
+
+        return original_pa_schema, partition_date_val
 
     def process_batch(self, context: dict) -> None:
         """Process a batch of records.

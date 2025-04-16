@@ -3,6 +3,8 @@ import pyarrow as pa  # type: ignore
 from pyarrow import Schema as PyarrowSchema, Field as PyarrowField
 from pyiceberg.schema import Schema as PyicebergSchema
 from pyiceberg.io.pyarrow import pyarrow_to_schema
+from decimal import Decimal
+import decimal
 
 
 # Borrowed from https://github.com/crowemi/target-s3/blob/main/target_s3/formats/format_parquet.py
@@ -81,7 +83,7 @@ def singer_to_pyarrow_schema_without_field_ids(self, singer_schema: dict) -> Pya
                 fields.append(pa.field(key, pa.int64(), nullable=nullable))
             elif "number" in type:
                 nullable = "null" in type
-                fields.append(pa.field(key, pa.float64(), nullable=nullable))
+                fields.append(pa.field(key, pa.decimal128(38,10), nullable=nullable))
             elif "boolean" in type:
                 nullable = "null" in type
                 fields.append(pa.field(key, pa.bool_(), nullable=nullable))

@@ -74,6 +74,7 @@ class IcebergSink(BatchSink):
         self.schema = schema
         self.is_first_batch = True
         self.schema_evolution_flag = self.config.get("schema_evolution_flag", False)
+        self.partition_date_value = self.config.get("partition_date", None)
 
     def _get_catalog(self) -> Any:
         """Initialize and return the Iceberg catalog."""
@@ -113,6 +114,13 @@ class IcebergSink(BatchSink):
         
         # Convert to PyArrow schema
         original_pa_schema = singer_to_pyarrow_schema(self, singer_schema)
+
+        if self.partition_date_value is not None:
+            self.logger.info(f"Custom partition_date value is {self.partition_date_value}")
+            partition_date_val = datetime.strptime(self.partition_date_value, "%Y-%m-%d").date()
+        else:
+            berlin_tz = pytz.timezone('Europe/Berlin')
+            partition_date_val = datetime.now(berlin_tz).date()
 
         berlin_tz = pytz.timezone('Europe/Berlin')
         partition_date_val = datetime.now(berlin_tz).date()

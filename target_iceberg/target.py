@@ -73,6 +73,12 @@ class TargetIceberg(Target):
              th.BooleanType,
              default=False,
              description="Add new fields in existing table automatically",
+         ),
+        th.Property(
+             "partition_date",
+             th.StringType,
+             default=False,
+             description="Add custom partition date value, instead of current date partition",
          )
     ).to_dict()
 

@@ -77,7 +77,7 @@ class TargetIceberg(Target):
         th.Property(
              "partition_date",
              th.StringType,
-             default=False,
+             default=None,
              description="Add custom partition date value, instead of current date partition",
          )
     ).to_dict()

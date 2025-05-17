@@ -122,9 +122,6 @@ class IcebergSink(BatchSink):
             berlin_tz = pytz.timezone('Europe/Berlin')
             partition_date_val = datetime.now(berlin_tz).date()
 
-        berlin_tz = pytz.timezone('Europe/Berlin')
-        partition_date_val = datetime.now(berlin_tz).date()
-
         return original_pa_schema, partition_date_val
 
     def process_batch(self, context: dict) -> None:
